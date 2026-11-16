@@ -217,8 +217,46 @@
   const contact=input('flReportContact','Optional contact detail');
   const description=el('textarea');description.id='flReportDescription';description.name='description';description.placeholder='Describe what you observed (max 800 characters)…';description.maxLength=800;description.required=true;
   const submit=el('button','Submit flood report','fl-feature-btn');submit.type='submit';
+  const historyToggle=el('button','View my reports','fl-feature-btn');historyToggle.type='button';historyToggle.style.marginTop='10px';
+  const historyPanel=el('section');historyPanel.hidden=true;historyPanel.setAttribute('aria-live','polite');historyPanel.style.marginTop='14px';
+  const historyList=el('div');historyList.setAttribute('role','list');
+  historyPanel.append(el('h3','Your reports'),historyList);
+  const result=el('div');
+  historyToggle.addEventListener('click',async()=>{
+   if(!historyPanel.hidden){historyPanel.hidden=true;historyToggle.textContent='View my reports';return;}
+   historyPanel.hidden=false;historyToggle.textContent='Hide my reports';historyList.replaceChildren(note('Loading your reports…'));
+   try{
+    let reports=[];
+    const apiBase=window.FLOODLENS_API_BASE||'';
+    if(apiBase){
+     const accessToken=window.FloodLensAuth?.getAccessToken();
+     if(!accessToken)throw new Error('Your sign-in session has expired. Please sign in again.');
+     const response=await fetch(apiBase+'/api/reports',{headers:{'Authorization':'Bearer '+accessToken}});
+     let payload={};try{payload=await response.json();}catch(_parseError){}
+     if(!response.ok)throw new Error(payload.error||'Could not load your reports.');
+     reports=Array.isArray(payload.reports)?payload.reports:[];
+    }else{
+     reports=JSON.parse(localStorage.getItem('floodLensCitizenReports')||'[]');
+    }
+    historyList.replaceChildren();
+    if(!reports.length){historyList.appendChild(note('You have not submitted any reports yet.'));return;}
+    reports.forEach(report=>{
+     const card=el('article',null,'fl-result-item');card.setAttribute('role','listitem');
+     const code=report.report_code||report.id||'Flood report';
+     const typeLabel=String(report.incident_type||report.type||'observation').replaceAll('_',' ');
+     const severityLabel=String(report.severity||'unspecified').replaceAll('_',' ');
+     const createdAt=report.created_at||report.createdAt;
+     const date=createdAt?new Date(createdAt):null;
+     card.append(el('strong',code),el('small',[typeLabel,severityLabel].join(' · ')));
+     card.append(el('p',report.location||'Location not provided'));
+     if(report.description)card.append(el('small',report.description));
+     if(date&&!Number.isNaN(date.getTime()))card.append(el('small',date.toLocaleString()));
+     historyList.appendChild(card);
+    });
+   }catch(error){historyList.replaceChildren(note(error.message||'Unable to load your reports.'));}
+  });
   grid.append(field('Incident type',type),field('Severity observed',severity),field('Location',location),field('Contact (optional)',contact));
-  f.append(grid,field('Observation details',description),submit);const result=el('div');
+  f.append(grid,field('Observation details',description),submit,historyToggle);
   f.addEventListener('submit',async e=>{
    e.preventDefault();submit.disabled=true;submit.textContent='Saving…';
    const report={id:'FLR-'+Date.now(),location:location.value.trim(),type:type.value,severity:severity.value,contact:contact.value.trim(),description:description.value.trim(),createdAt:new Date().toISOString(),status:'Saved locally'};
@@ -246,7 +284,7 @@
    }catch(error){result.replaceChildren(note(error.message||'Unable to save this report.'));}
    finally{submit.disabled=false;submit.textContent='Submit flood report';}
   });
-  wrap.append(f,result,note('Privacy note: contact details, if entered, remain local to this browser and are not sent to the backend. Reports are observations, not verified incidents. This is not an emergency-reporting channel.'));
+  wrap.append(f,result,historyPanel,note('Privacy note: contact details, if entered, remain local to this browser and are not sent to the backend. Reports are observations, not verified incidents. This is not an emergency-reporting channel.'));
   modal.open('Citizen Flood Reporting',wrap);
  }
  function openNotifications(){openNotificationPanel(true);}
